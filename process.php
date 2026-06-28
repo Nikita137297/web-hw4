@@ -1,187 +1,166 @@
 <?php
-// process.php - Обработчик формы с валидацией и записью в БД
+// process.php - Обработчик формы (GET метод, валидация, Cookies, БД)
 require_once 'config.php';
 
-// Функция для вывода сообщения об ошибке
-function showError($message) {
-    echo '<!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <title>Ошибка валидации</title>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-        <header>
-            <div class="container">
-                <h2>Задание 3. Ошибка при заполнении формы</h2>
-            </div>
-        </header>
-        <main class="container">
-            <div class="error-message">
-                <strong>❌ Ошибка:</strong> ' . htmlspecialchars($message) . '
-            </div>
-            <a href="index.php" class="back-link">← Вернуться к форме</a>
-        </main>
-        <footer><div class="container"><p>Лабораторная работа №3</p></div></footer>
-    </body>
-    </html>';
-    exit;
+// Очищаем старые Cookies об ошибках перед новой проверкой
+foreach (['full_name', 'phone', 'email', 'birth_date', 'gender', 'languages', 'biography', 'contract_accepted'] as $field) {
+    setcookie("error_$field", "", time() - 3600, '/');
 }
 
-// Функция для вывода сообщения об успехе
-function showSuccess($message, $id = null) {
-    echo '<!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <title>Успешное сохранение</title>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-        <header>
-            <div class="container">
-                <h2>Задание 3. Данные успешно сохранены</h2>
-            </div>
-        </header>
-        <main class="container">
-            <div class="success-message">
-                <strong>✅ ' . htmlspecialchars($message) . '</strong><br>' .
-                ($id ? "ID записи: " . htmlspecialchars($id) : "") . '
-            </div>
-            <a href="index.php" class="back-link">← Заполнить новую форму</a>
-        </main>
-        <footer><div class="container"><p>Лабораторная работа №3</p></div></footer>
-    </body>
-    </html>';
-    exit;
-}
+// Получаем данные из GET-запроса
+$full_name = trim($_GET['full_name'] ?? '');
+$phone = trim($_GET['phone'] ?? '');
+$email = trim($_GET['email'] ?? '');
+$birth_date = trim($_GET['birth_date'] ?? '');
+$gender = $_GET['gender'] ?? '';
+$languages = $_GET['languages'] ?? [];
+$biography = trim($_GET['biography'] ?? '');
+$contract_accepted = isset($_GET['contract_accepted']) && $_GET['contract_accepted'] == '1' ? 1 : 0;
 
-// Проверяем, была ли отправлена форма
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    showError("Форма не была отправлена.");
-}
+// Массивы для хранения ошибок и данных для Cookies
+$errors = [];
+$formData = [];
 
-// ==================== ВАЛИДАЦИЯ ПОЛЕЙ ====================
+// ==================== ВАЛИДАЦИЯ РЕГУЛЯРНЫМИ ВЫРАЖЕНИЯМИ ====================
 
-// 1. ФИО: только буквы, пробелы, дефис, длина ≤ 150
-$full_name = trim($_POST['full_name'] ?? '');
+// 1. ФИО: только буквы, пробелы, дефис, длина 2-150 символов
+$formData['full_name'] = $full_name;
 if (empty($full_name)) {
-    showError("Поле 'ФИО' обязательно для заполнения.");
-}
-if (strlen($full_name) > 150) {
-    showError("Поле 'ФИО' не должно превышать 150 символов.");
-}
-if (!preg_match('/^[a-zA-Zа-яА-ЯёЁ\s\-]+$/u', $full_name)) {
-    showError("Поле 'ФИО' должно содержать только буквы, пробелы и дефис.");
+    $errors['full_name'] = "ФИО обязательно для заполнения.";
+} elseif (strlen($full_name) < 2) {
+    $errors['full_name'] = "ФИО должно содержать минимум 2 символа.";
+} elseif (strlen($full_name) > 150) {
+    $errors['full_name'] = "ФИО не должно превышать 150 символов.";
+} elseif (!preg_match('/^[a-zA-Zа-яА-ЯёЁ\s\-]+$/u', $full_name)) {
+    $errors['full_name'] = "ФИО может содержать только буквы (русские/английские), пробелы и дефис.";
 }
 
-// 2. Телефон: российский формат +7 или 8, далее 10 цифр
-$phone = trim($_POST['phone'] ?? '');
-if (empty($phone)) {
-    showError("Поле 'Телефон' обязательно для заполнения.");
-}
+// 2. Телефон: проверка регулярным выражением
+$formData['phone'] = $phone;
 $phone_clean = preg_replace('/[^0-9+]/', '', $phone);
-if (!preg_match('/^(\+7|8)[0-9]{10}$/', $phone_clean)) {
-    showError("Поле 'Телефон' должно быть в формате +7XXXXXXXXXX или 8XXXXXXXXXX (10 цифр после кода).");
-}
-// Приводим к единому формату +7...
-if (preg_match('/^8([0-9]{10})$/', $phone_clean, $matches)) {
-    $phone = '+7' . $matches[1];
+if (empty($phone_clean)) {
+    $errors['phone'] = "Телефон обязателен для заполнения.";
+} elseif (!preg_match('/^(\+7|8)[0-9]{10}$/', $phone_clean)) {
+    $errors['phone'] = "Телефон должен быть в формате +7XXXXXXXXXX или 8XXXXXXXXXX (10 цифр после кода).";
 } else {
-    $phone = $phone_clean;
+    // Приводим к единому формату +7...
+    if (preg_match('/^8([0-9]{10})$/', $phone_clean, $matches)) {
+        $formData['phone'] = '+7' . $matches[1];
+    } else {
+        $formData['phone'] = $phone_clean;
+    }
 }
 
-// 3. Email: валидный email
-$email = trim($_POST['email'] ?? '');
+// 3. Email: проверка фильтром + регулярка
+$formData['email'] = $email;
 if (empty($email)) {
-    showError("Поле 'E-mail' обязательно для заполнения.");
-}
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    showError("Поле 'E-mail' содержит некорректный адрес.");
-}
-if (strlen($email) > 100) {
-    showError("Поле 'E-mail' не должно превышать 100 символов.");
+    $errors['email'] = "E-mail обязателен для заполнения.";
+} elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors['email'] = "Введите корректный E-mail (например, user@domain.ru).";
+} elseif (strlen($email) > 100) {
+    $errors['email'] = "E-mail не должен превышать 100 символов.";
 }
 
-// 4. Дата рождения: не в будущем, не старше 120 лет
-$birth_date = trim($_POST['birth_date'] ?? '');
+// 4. Дата рождения
+$formData['birth_date'] = $birth_date;
 if (empty($birth_date)) {
-    showError("Поле 'Дата рождения' обязательно для заполнения.");
-}
-$date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
-if (!$date_obj || $date_obj->format('Y-m-d') !== $birth_date) {
-    showError("Поле 'Дата рождения' имеет некорректный формат.");
-}
-$today = new DateTime();
-$age = $today->diff($date_obj)->y;
-if ($date_obj > $today) {
-    showError("Дата рождения не может быть в будущем.");
-}
-if ($age > 120) {
-    showError("Возраст не может превышать 120 лет.");
+    $errors['birth_date'] = "Дата рождения обязательна для заполнения.";
+} else {
+    $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+    if (!$date_obj || $date_obj->format('Y-m-d') !== $birth_date) {
+        $errors['birth_date'] = "Дата рождения должна быть в формате ГГГГ-ММ-ДД.";
+    } else {
+        $today = new DateTime();
+        $age = $today->diff($date_obj)->y;
+        if ($date_obj > $today) {
+            $errors['birth_date'] = "Дата рождения не может быть в будущем.";
+        } elseif ($age > 120) {
+            $errors['birth_date'] = "Возраст не может превышать 120 лет.";
+        }
+    }
 }
 
-// 5. Пол: только допустимые значения (male/female)
-$gender = $_POST['gender'] ?? '';
+// 5. Пол
+$formData['gender'] = $gender;
 $allowed_genders = ['male', 'female'];
-if (!in_array($gender, $allowed_genders)) {
-    showError("Поле 'Пол' содержит недопустимое значение. Выберите 'Мужской' или 'Женский'.");
+if (empty($gender)) {
+    $errors['gender'] = "Выберите пол.";
+} elseif (!in_array($gender, $allowed_genders)) {
+    $errors['gender'] = "Выберите 'Мужской' или 'Женский'.";
 }
 
-// 6. Любимые языки программирования 
-$languages = $_POST['languages'] ?? [];
-if (empty($languages)) {
-    showError("Выберите хотя бы один любимый язык программирования.");
-}
+// 6. Языки программирования
 $allowed_languages = ['Pascal', 'C', 'C++', 'JavaScript', 'PHP', 'Python', 'Java', 'Haskell', 'Clojure', 'Prolog', 'Scala', 'Go'];
-$invalid_langs = array_diff($languages, $allowed_languages);
-if (!empty($invalid_langs)) {
-    showError("Выбраны недопустимые языки программирования: " . implode(', ', $invalid_langs));
+$formData['languages'] = implode(',', $languages);
+if (empty($languages)) {
+    $errors['languages'] = "Выберите хотя бы один любимый язык программирования.";
+} else {
+    $invalid_langs = array_diff($languages, $allowed_languages);
+    if (!empty($invalid_langs)) {
+        $errors['languages'] = "Выбраны недопустимые языки: " . implode(', ', $invalid_langs);
+    }
 }
 
-// 7. Биография: не обязательна, но если есть, проверим длину (макс 5000)
-$biography = trim($_POST['biography'] ?? '');
+// 7. Биография
+$formData['biography'] = $biography;
 if (strlen($biography) > 5000) {
-    showError("Поле 'Биография' не должно превышать 5000 символов.");
+    $errors['biography'] = "Биография не должна превышать 5000 символов.";
 }
 
-// 8. Чекбокс с контрактом
-$contract_accepted = isset($_POST['contract_accepted']) && $_POST['contract_accepted'] == 1 ? 1 : 0;
+// 8. Чекбокс
+$formData['contract_accepted'] = $contract_accepted;
 if (!$contract_accepted) {
-    showError("Вы должны ознакомиться с контрактом и подтвердить согласие.");
+    $errors['contract_accepted'] = "Вы должны ознакомиться с контрактом и подтвердить согласие.";
 }
 
-// ==================== СОХРАНЕНИЕ В БАЗУ ДАННЫХ ====================
+// ==================== ЕСЛИ ЕСТЬ ОШИБКИ ====================
+if (!empty($errors)) {
+    // Сохраняем ошибки и данные в Cookies (до конца сессии)
+    foreach ($errors as $field => $message) {
+        setcookie("error_$field", $message, 0, '/');
+    }
+    foreach ($formData as $field => $value) {
+        setcookie("form_$field", $value, 0, '/');
+    }
+    
+    // Перенаправляем обратно на форму с GET-параметрами
+    $query = http_build_query(array_filter($formData, function($v) { return $v !== '' && $v !== []; }));
+    header("Location: index.php?" . $query);
+    exit;
+}
 
+// ==================== УСПЕШНАЯ ВАЛИДАЦИЯ ====================
+// Сохраняем данные в Cookies на 1 год (365 дней)
+foreach ($formData as $field => $value) {
+    setcookie("form_$field", $value, time() + 365 * 24 * 3600, '/');
+}
+
+// Сохраняем в базу данных
 try {
-    // Начинаем транзакцию
     $pdo->beginTransaction();
     
-    // Вставка основной записи
+    // Вставка анкеты
     $sql = "INSERT INTO applications (full_name, phone, email, birth_date, gender, biography, contract_accepted) 
             VALUES (:full_name, :phone, :email, :birth_date, :gender, :biography, :contract_accepted)";
-    
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
-        ':full_name' => $full_name,
-        ':phone' => $phone,
-        ':email' => $email,
-        ':birth_date' => $birth_date,
-        ':gender' => $gender,
-        ':biography' => $biography,
-        ':contract_accepted' => $contract_accepted
+        ':full_name' => $formData['full_name'],
+        ':phone' => $formData['phone'],
+        ':email' => $formData['email'],
+        ':birth_date' => $formData['birth_date'],
+        ':gender' => $formData['gender'],
+        ':biography' => $formData['biography'],
+        ':contract_accepted' => $formData['contract_accepted']
     ]);
     
-    // Получаем ID последней вставленной записи
     $application_id = $pdo->lastInsertId();
     
-    // Получаем ID языков программирования из БД и вставляем связи
-    $lang_sql = "SELECT id, name FROM programming_languages WHERE name = :name";
+    // Вставка языков
+    $lang_sql = "SELECT id FROM programming_languages WHERE name = :name";
     $lang_stmt = $pdo->prepare($lang_sql);
     
-    $insert_link_sql = "INSERT INTO application_languages (application_id, language_id) VALUES (:app_id, :lang_id)";
-    $link_stmt = $pdo->prepare($insert_link_sql);
+    $link_sql = "INSERT INTO application_languages (application_id, language_id) VALUES (:app_id, :lang_id)";
+    $link_stmt = $pdo->prepare($link_sql);
     
     foreach ($languages as $lang_name) {
         $lang_stmt->execute([':name' => $lang_name]);
@@ -191,22 +170,19 @@ try {
                 ':app_id' => $application_id,
                 ':lang_id' => $lang_row['id']
             ]);
-        } else {
-            // На случай, если язык отсутствует в таблице languages (хотя мы заполнили)
-            throw new Exception("Язык '$lang_name' не найден в справочнике.");
         }
     }
     
-    // Подтверждаем транзакцию
     $pdo->commit();
     
-    showSuccess("Данные успешно сохранены в базу данных!", $application_id);
+    // Успех — перенаправляем на страницу успеха
+    header("Location: success.php?id=" . $application_id);
+    exit;
     
 } catch (PDOException $e) {
     $pdo->rollBack();
-    showError("Ошибка при сохранении в базу данных: " . $e->getMessage());
-} catch (Exception $e) {
-    $pdo->rollBack();
-    showError("Ошибка: " . $e->getMessage());
+    setcookie("error_general", "Ошибка базы данных: " . $e->getMessage(), 0, '/');
+    header("Location: index.php");
+    exit;
 }
 ?>

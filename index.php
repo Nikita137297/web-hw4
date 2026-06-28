@@ -1,115 +1,204 @@
+<?php
+// index.php - Форма с валидацией на бэкенде, подсветкой ошибок и Cookies
+
+
+// Функция для получения значения из Cookies или GET (приоритет: GET > Cookie)
+function getValue($fieldName, $default = '') {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET[$fieldName]) && $_GET[$fieldName] !== '') {
+        return htmlspecialchars(trim($_GET[$fieldName]));
+    }
+    if (isset($_COOKIE['form_' . $fieldName])) {
+        return htmlspecialchars($_COOKIE['form_' . $fieldName]);
+    }
+    return $default;
+}
+
+// Функция для получения ошибки из Cookies
+function getError($fieldName) {
+    if (isset($_COOKIE['error_' . $fieldName])) {
+        return $_COOKIE['error_' . $fieldName];
+    }
+    return '';
+}
+
+// Функция для проверки наличия ошибки (для подсветки)
+function hasError($fieldName) {
+    return isset($_COOKIE['error_' . $fieldName]);
+}
+
+// Получаем значения полей (Cookies или GET)
+$full_name = getValue('full_name');
+$phone = getValue('phone');
+$email = getValue('email');
+$birth_date = getValue('birth_date');
+$gender = getValue('gender');
+
+// Языки: из Cookie хранятся как строка через запятую
+$languages = [];
+if (isset($_COOKIE['form_languages']) && $_COOKIE['form_languages'] !== '') {
+    $languages = explode(',', $_COOKIE['form_languages']);
+}
+// Если есть GET-параметр languages (при ошибке)
+if (isset($_GET['languages']) && is_array($_GET['languages'])) {
+    $languages = $_GET['languages'];
+}
+
+$biography = getValue('biography');
+$contract_accepted = (isset($_COOKIE['form_contract_accepted']) && $_COOKIE['form_contract_accepted'] == '1') ||
+                     (isset($_GET['contract_accepted']) && $_GET['contract_accepted'] == '1');
+
+$allowed_languages = ['Pascal', 'C', 'C++', 'JavaScript', 'PHP', 'Python', 'Java', 'Haskell', 'Clojure', 'Prolog', 'Scala', 'Go'];
+?>
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Лабораторная работа №3 — Форма с сохранением в БД</title>
+    <title>Лабораторная №4 — Cookies, валидация</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .error-border {
+            border: 2px solid #f44336 !important;
+            background-color: #ffebee !important;
+        }
+        .field-error {
+            color: #f44336;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+            display: block;
+        }
+        .error-summary {
+            background-color: #ffebee;
+            border-left: 5px solid #f44336;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border-radius: 12px;
+        }
+    </style>
 </head>
 <body>
     <header>
         <div class="container">
-            <h2>Задание 3. Форма с валидацией и сохранением в базу данных</h2>
+            <h1>📡 Программно-аппаратные средства Web</h1>
+           
+            <h2>Задание 4. Валидация формы с использованием Cookies</h2>
+            
         </div>
     </header>
 
     <main class="container">
-        <section class="intro">
-            <p>Заполните форму ниже. Все поля обязательны для заполнения, кроме биографии. После отправки данные будут проверены на сервере и сохранены в базу данных MySQL.</p>
-        </section>
+        <!-- Вывод списка ошибок из Cookies -->
+        <?php
+        $error_fields = ['full_name', 'phone', 'email', 'birth_date', 'gender', 'languages', 'contract_accepted'];
+        $error_messages = [];
+        foreach ($error_fields as $field) {
+            $err = getError($field);
+            if (!empty($err)) $error_messages[] = $err;
+        }
+        if (!empty($error_messages)): ?>
+        <div class="error-summary">
+            <strong>❌ Исправьте следующие ошибки:</strong>
+            <ul>
+                <?php foreach ($error_messages as $msg): ?>
+                    <li><?php echo htmlspecialchars($msg); ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php endif; ?>
 
-        <!-- Форма отправляется на process.php методом POST -->
-        <form action="process.php" method="POST" class="application-form">
+        <form action="process.php" method="GET" class="application-form">
             <!-- 1. ФИО -->
             <div class="form-group">
-                <label for="full_name">ФИО <span class="required">*</span></label>
-                <input type="text" id="full_name" name="full_name" required 
-                       placeholder="Иванов Иван Иванович" 
-                       value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>">
-                <small>Только буквы, пробелы и дефис, не более 150 символов</small>
+                <label>ФИО <span class="required">*</span></label>
+                <input type="text" name="full_name" value="<?php echo $full_name; ?>"
+                       class="<?php echo hasError('full_name') ? 'error-border' : ''; ?>">
+                <?php if (hasError('full_name')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('full_name'); ?></span>
+                <?php endif; ?>
             </div>
 
             <!-- 2. Телефон -->
             <div class="form-group">
-                <label for="phone">Телефон <span class="required">*</span></label>
-                <input type="tel" id="phone" name="phone" required 
-                       placeholder="+7 (123) 456-78-90" 
-                       value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>">
-                <small>Формат: +7XXXXXXXXXX или 8XXXXXXXXXX</small>
+                <label>Телефон <span class="required">*</span></label>
+                <input type="text" name="phone" value="<?php echo $phone; ?>"
+                       class="<?php echo hasError('phone') ? 'error-border' : ''; ?>">
+                <?php if (hasError('phone')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('phone'); ?></span>
+                <?php endif; ?>
             </div>
 
             <!-- 3. Email -->
             <div class="form-group">
-                <label for="email">E-mail <span class="required">*</span></label>
-                <input type="email" id="email" name="email" required 
-                       placeholder="example@domain.ru" 
-                       value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
+                <label>Email <span class="required">*</span></label>
+                <input type="email" name="email" value="<?php echo $email; ?>"
+                       class="<?php echo hasError('email') ? 'error-border' : ''; ?>">
+                <?php if (hasError('email')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('email'); ?></span>
+                <?php endif; ?>
             </div>
 
             <!-- 4. Дата рождения -->
             <div class="form-group">
-                <label for="birth_date">Дата рождения <span class="required">*</span></label>
-                <input type="date" id="birth_date" name="birth_date" required 
-                       value="<?php echo htmlspecialchars($_POST['birth_date'] ?? ''); ?>">
+                <label>Дата рождения <span class="required">*</span></label>
+                <input type="date" name="birth_date" value="<?php echo $birth_date; ?>"
+                       class="<?php echo hasError('birth_date') ? 'error-border' : ''; ?>">
+                <?php if (hasError('birth_date')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('birth_date'); ?></span>
+                <?php endif; ?>
             </div>
 
-            <!-- 5. Пол  -->
-<div class="form-group">
-    <label>Пол <span class="required">*</span></label>
-    <div class="radio-group">
-        <label><input type="radio" name="gender" value="male" 
-            <?php echo (($_POST['gender'] ?? '') == 'male') ? 'checked' : ''; ?>> Мужской</label>
-        <label><input type="radio" name="gender" value="female" 
-            <?php echo (($_POST['gender'] ?? '') == 'female') ? 'checked' : ''; ?>> Женский</label>
-    </div>
-</div>
-
-            <!-- 6. Любимый язык программирования-->
+            <!-- 5. Пол -->
             <div class="form-group">
-                <label for="languages">Любимый язык программирования <span class="required">*</span></label>
-                <select name="languages[]" id="languages" multiple size="6" required>
-                    <option value="Pascal" <?php echo (in_array('Pascal', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Pascal</option>
-                    <option value="C" <?php echo (in_array('C', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>C</option>
-                    <option value="C++" <?php echo (in_array('C++', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>C++</option>
-                    <option value="JavaScript" <?php echo (in_array('JavaScript', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>JavaScript</option>
-                    <option value="PHP" <?php echo (in_array('PHP', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>PHP</option>
-                    <option value="Python" <?php echo (in_array('Python', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Python</option>
-                    <option value="Java" <?php echo (in_array('Java', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Java</option>
-                    <option value="Haskell" <?php echo (in_array('Haskell', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Haskell</option>
-                    <option value="Clojure" <?php echo (in_array('Clojure', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Clojure</option>
-                    <option value="Prolog" <?php echo (in_array('Prolog', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Prolog</option>
-                    <option value="Scala" <?php echo (in_array('Scala', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Scala</option>
-                    <option value="Go" <?php echo (in_array('Go', $_POST['languages'] ?? [])) ? 'selected' : ''; ?>>Go</option>
+                <label>Пол <span class="required">*</span></label>
+                <div class="radio-group">
+                    <label><input type="radio" name="gender" value="male" <?php echo $gender == 'male' ? 'checked' : ''; ?>> Мужской</label>
+                    <label><input type="radio" name="gender" value="female" <?php echo $gender == 'female' ? 'checked' : ''; ?>> Женский</label>
+                </div>
+                <?php if (hasError('gender')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('gender'); ?></span>
+                <?php endif; ?>
+            </div>
+
+            <!-- 6. Языки -->
+            <div class="form-group">
+                <label>Любимый язык <span class="required">*</span></label>
+                <select name="languages[]" multiple size="6" class="<?php echo hasError('languages') ? 'error-border' : ''; ?>">
+                    <?php foreach ($allowed_languages as $lang): ?>
+                        <option value="<?php echo $lang; ?>" <?php echo in_array($lang, $languages) ? 'selected' : ''; ?>>
+                            <?php echo $lang; ?>
+                        </option>
+                    <?php endforeach; ?>
                 </select>
-                <small>Зажмите Ctrl  для выбора нескольких языков</small>
+                <?php if (hasError('languages')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('languages'); ?></span>
+                <?php endif; ?>
             </div>
 
-            <!-- 7. Биография  -->
+            <!-- 7. Биография -->
             <div class="form-group">
-                <label for="biography">Биография</label>
-                <textarea id="biography" name="biography" rows="5" 
-                          placeholder="Расскажите немного о себе..."><?php echo htmlspecialchars($_POST['biography'] ?? ''); ?></textarea>
+                <label>Биография</label>
+                <textarea name="biography" rows="5"><?php echo $biography; ?></textarea>
             </div>
 
-            <!-- 8. Чекбокс с контрактом -->
+            <!-- 8. Чекбокс -->
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="contract_accepted" value="1" 
-                        <?php echo (isset($_POST['contract_accepted']) && $_POST['contract_accepted'] == 1) ? 'checked' : ''; ?>>
+                    <input type="checkbox" name="contract_accepted" value="1" <?php echo $contract_accepted ? 'checked' : ''; ?>>
                     С контрактом ознакомлен(а) <span class="required">*</span>
                 </label>
+                <?php if (hasError('contract_accepted')): ?>
+                    <span class="field-error">⚠️ <?php echo getError('contract_accepted'); ?></span>
+                <?php endif; ?>
             </div>
 
-            <!-- 9. Кнопка отправки -->
-            <div class="form-group">
-                <button type="submit" class="submit-btn"> Сохранить</button>
-            </div>
+            <button type="submit" class="submit-btn">✅ Отправить</button>
         </form>
+
+        <div class="action-buttons">
+            <a href="list.php" class="action-btn">📋 Анкеты</a>
+            <a href="bd.html" class="action-btn secondary">🗄️ БД</a>
+        </div>
     </main>
-<!-- Ссылка на список анкет -->
-<div class="action-buttons" style="margin-top: 1.5rem; text-align: center;">
-    <a href="list.php" class="action-btn"> Посмотреть все сохранённые анкеты</a>
-    <a href="bd.html" class="action-btn secondary"> Структура БД</a>
-</div>
+    <footer><div class="container"><p>Лабораторная №4 — Cookies </p></div></footer>
 </body>
 </html>
